@@ -106,9 +106,12 @@ struct cds_list_head *pdeq_pop_l(struct pdeq *d)		//\lnlbl{popl:b}
 	struct cds_list_head *e;
 
 	spin_lock(&d->llock);					//\lnlbl{popl:acq:l}
+	// 左队列出列
 	e = deq_pop_l(&d->ldeq);				//\lnlbl{popl:deq:ll}
+	// 如若左队列为空
 	if (e == NULL) {
 		spin_lock(&d->rlock);				//\lnlbl{popl:acq:r}
+		// 右队列出列,并将左右队列互换
 		e = deq_pop_l(&d->rdeq);			//\lnlbl{popl:deq:lr}
 		cds_list_splice(&d->rdeq.chain, &d->ldeq.chain);//\lnlbl{popl:move}
 		CDS_INIT_LIST_HEAD(&d->rdeq.chain);		//\lnlbl{popl:init:r}
@@ -125,7 +128,11 @@ struct cds_list_head *pdeq_pop_r(struct pdeq *d)		//\lnlbl{popr:b}
 	spin_lock(&d->rlock);					//\lnlbl{popr:acq:r1}
 	e = deq_pop_r(&d->rdeq);				//\lnlbl{popr:deq:rr1}
 	if (e == NULL) {					//\lnlbl{popr:check1}
+		// 这里特别注意,需要先释放右队列
+		// 保证 llock -> rlock 的上锁顺序
 		spin_unlock(&d->rlock);				//\lnlbl{popr:rel:r1}
+		// 这里释放期间是否可能被插入新的元素到右队列中?
+		// 是的,所以在两个锁都加上后,要先从右队列中取数据。
 		spin_lock(&d->llock);				//\lnlbl{popr:acq:l}
 		spin_lock(&d->rlock);				//\lnlbl{popr:acq:r2}
 		e = deq_pop_r(&d->rdeq);			//\lnlbl{popr:deq:rr2}

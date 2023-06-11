@@ -29,10 +29,14 @@ struct route_entry {
 	struct route_entry *re_next;
 	unsigned long addr;
 	unsigned long iface;
+	// 是否已释放
+	// 一般情况下能查看到的条目都为 0
+	// 除非 re_free 执行 free 失败了
 	int re_freed;					//\lnlbl{entry:freed}
 };
 							//\fcvexclude
 struct route_entry route_list;
+// 保护 route_list
 DEFINE_SPINLOCK(routelock);				//\lnlbl{entry:routelock}
 
 static void re_free(struct route_entry *rep)		//\lnlbl{re_free:b}
@@ -53,19 +57,27 @@ unsigned long route_lookup(unsigned long addr)
 	unsigned long ret;
 
 retry:
+	// 为什么访问 route_list 不用加锁???
 	repp = &route_list.re_next;
 	rep = NULL;
+	// 遍历 route_list 直到找到 addr 对应的 rep
 	do {
+		// 为什么这里要减少引用?
+		// 因为 rep 表示上一条 route entry(已经增加了引用计数)并且没匹配上 addr(否则会退出循环)
+		// 所以在这里需要减少引用计数
 		if (rep && atomic_dec_and_test(&rep->re_refcnt)) //\lnlbl{lookup:relprev:b}
 			re_free(rep);				//\lnlbl{lookup:relprev:e}
+		// 在这里将 rep 更新为当前 route entry
 		rep = READ_ONCE(*repp);
 		if (rep == NULL)				//\lnlbl{lookup:check_NULL}
 			return ULONG_MAX;
 								//\fcvexclude
 		/* Acquire a reference if the count is non-zero. */
+		// 如果计数为非零，则获取引用。
 		do {						//\lnlbl{lookup:acq:b}
 			if (READ_ONCE(rep->re_freed))		//\lnlbl{lookup:check_uaf}
 				abort();			//\lnlbl{lookup:abort}
+			// 如若 rep refcnt 小于 0
 			old = atomic_read(&rep->re_refcnt);
 			if (old <= 0)
 				goto retry;
@@ -76,6 +88,7 @@ retry:
 		/* Advance to next. */
 		repp = &rep->re_next;
 	} while (rep->addr != addr);
+	// 如若等于
 	ret = rep->iface;
 	if (atomic_dec_and_test(&rep->re_refcnt))
 		re_free(rep);
@@ -90,13 +103,14 @@ retry:
 int route_add(unsigned long addr, unsigned long interface)
 {
 	struct route_entry *rep;
-
+	// 申请内存并初始化 rep
 	rep = malloc(sizeof(*rep));
 	if (!rep)
 		return -ENOMEM;
 	atomic_set(&rep->re_refcnt, 1);
 	rep->addr = addr;
 	rep->iface = interface;
+	// 加锁将 rep 插入到 route_list
 	spin_lock(&routelock);				//\lnlbl{acq1}
 	rep->re_next = route_list.re_next;
 	rep->re_freed = 0;				//\lnlbl{init:freed}
@@ -112,7 +126,7 @@ int route_del(unsigned long addr)
 {
 	struct route_entry *rep;
 	struct route_entry **repp;
-
+	// 从 route_list 找到匹配 addr 的地址并且解除关系
 	spin_lock(&routelock);				//\lnlbl{acq2}
 	repp = &route_list.re_next;
 	for (;;) {
@@ -122,6 +136,7 @@ int route_del(unsigned long addr)
 		if (rep->addr == addr) {
 			*repp = rep->re_next;
 			spin_unlock(&routelock);	//\lnlbl{rel2}
+			// 判断是否可释放
 			if (atomic_dec_and_test(&rep->re_refcnt)) //\lnlbl{re_free:b}
 				re_free(rep);		//\lnlbl{re_free:e}
 			return 0;

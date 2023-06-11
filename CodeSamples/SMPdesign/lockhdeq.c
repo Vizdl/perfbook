@@ -132,9 +132,11 @@ void deq_push_r(struct cds_list_head *e, struct deq *p)
 
 //\begin{snippet}[labelbase=ln:SMPdesign:lockhdeq:struct_pdeq,commandchars=\\\@\$]
 struct pdeq {
+	// llock 被用来保护 lidx
 	spinlock_t llock;				//\lnlbl{llock}
 	int lidx;					//\lnlbl{lidx}
 	/* char pad1[CACHE_LINE_SIZE - sizeof(spinlock_t) - sizeof(int)]; */
+	// rlock 被用来保护 rlock
 #ifndef FCV_SNIPPET
 	spinlock_t rlock ____cacheline_internodealigned_in_smp;
 #else /* FCV_SNIPPET */
@@ -200,7 +202,7 @@ struct cds_list_head *pdeq_pop_r(struct pdeq *d)
 void pdeq_push_l(struct cds_list_head *e, struct pdeq *d)//\lnlbl{pushl:b}
 {
 	int i;
-
+	// 获取左手锁
 	spin_lock(&d->llock);				//\lnlbl{pushl:acq}
 	i = d->lidx;					//\lnlbl{pushl:idx}
 	deq_push_l(e, &d->bkt[i]);			//\lnlbl{pushl:enque}

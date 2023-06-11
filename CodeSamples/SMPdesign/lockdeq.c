@@ -73,14 +73,17 @@ struct deq_bkt {
 
 struct pdeq {
 	spinlock_t llock;
+	// bkt 的索引
 	int lidx;
 	/* char pad1[CACHE_LINE_SIZE - sizeof(spinlock_t) - sizeof(int)]; */
 	spinlock_t rlock ____cacheline_internodealigned_in_smp;
+	// bkt 的索引
 	int ridx;
 	/* char pad2[CACHE_LINE_SIZE - sizeof(spinlock_t) - sizeof(int)]; */
 	struct deq_bkt bkt[DEQ_N_BKTS];
 };
 
+// 环形遍历(小于最小值)
 static int moveleft(int idx)
 {
 	return (idx - 1) & (DEQ_N_BKTS - 1);
@@ -111,9 +114,12 @@ struct cds_list_head *pdeq_pop_l(struct pdeq *d)
 	int i;
 	struct deq_bkt *p;
 
+	// 先锁住左手锁
 	spin_lock(&d->llock);
+	// 找到存储最左边元素的链表 p
 	i = moveright(d->lidx);
 	p = &d->bkt[i];
+	// 锁住链表 并去除第一个元素
 	spin_lock(&p->lock);
 	if (cds_list_empty(&p->chain))
 		e = NULL;
@@ -151,11 +157,14 @@ struct cds_list_head *pdeq_pop_r(struct pdeq *d)
 	return e;
 }
 
+/// @brief push 节点 e 到左端
+/// @param e 待插入节点
+/// @param d 双端队列
 void pdeq_push_l(struct cds_list_head *e, struct pdeq *d)
 {
 	int i;
 	struct deq_bkt *p;
-
+	// 先锁住左手锁
 	spin_lock(&d->llock);
 	i = d->lidx;
 	p = &d->bkt[i];
@@ -166,11 +175,14 @@ void pdeq_push_l(struct cds_list_head *e, struct pdeq *d)
 	spin_unlock(&d->llock);
 }
 
+/// @brief push 节点 e 到右端
+/// @param e 
+/// @param d 
 void pdeq_push_r(struct cds_list_head *e, struct pdeq *d)
 {
 	int i;
 	struct deq_bkt *p;
-
+	// 先锁住右手锁
 	spin_lock(&d->rlock);
 	i = d->ridx;
 	p = &d->bkt[i];
