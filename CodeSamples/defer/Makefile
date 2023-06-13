@@ -42,6 +42,7 @@ ARCH_DEPENDENT = gettimestamp \
 	route_rcu \
 	route_rcu_qsbr \
 	route_refcnt \
+	route_spinlock \
 	route_seq \
 	route_seqlock \
 	seqlocktorture \
@@ -138,6 +139,9 @@ route_rcu_qsbr: route_rcu.c ../api.h ../lib/random.h ../lib/random.c routetortur
 
 route_refcnt: route_refcnt.c ../api.h ../lib/random.h ../lib/random.c routetorture.h
 	cc $(GCC_ARGS) -o route_refcnt route_refcnt.c ../lib/random.c -lpthread
+
+route_spinlock: route_spinlock.c ../api.h ../lib/random.h ../lib/random.c routetorture.h
+	cc $(GCC_ARGS) -o route_spinlock route_spinlock.c ../lib/random.c -lpthread
 
 route_seq: route_seq.c ../api.h ../lib/random.h ../lib/random.c routetorture.h
 	cc $(GCC_ARGS) -o route_seq route_seq.c ../lib/random.c -lpthread
