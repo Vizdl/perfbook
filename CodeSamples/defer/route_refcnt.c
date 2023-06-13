@@ -32,6 +32,9 @@ struct route_entry {
 	// 是否已释放
 	// 一般情况下能查看到的条目都为 0
 	// 除非 re_free 执行 free 失败了
+	// 这个的主要目的就是用来检测是否成功释放的
+	// if (READ_ONCE(rep->re_freed))
+	// 	abort();	
 	int re_freed;					//\lnlbl{entry:freed}
 };
 							//\fcvexclude
@@ -58,6 +61,8 @@ unsigned long route_lookup(unsigned long addr)
 
 retry:
 	// 为什么访问 route_list 不用加锁???
+	// 这里是用原子整数实现遍历,但我不知道为什么可以
+	// 可以做一个实验来证明
 	repp = &route_list.re_next;
 	rep = NULL;
 	// 遍历 route_list 直到找到 addr 对应的 rep
@@ -70,14 +75,22 @@ retry:
 		// 在这里将 rep 更新为当前 route entry
 		rep = READ_ONCE(*repp);
 		if (rep == NULL)				//\lnlbl{lookup:check_NULL}
+		{
 			return ULONG_MAX;
+		}
 								//\fcvexclude
 		/* Acquire a reference if the count is non-zero. */
 		// 如果计数为非零，则获取引用。
 		do {						//\lnlbl{lookup:acq:b}
-			if (READ_ONCE(rep->re_freed))		//\lnlbl{lookup:check_uaf}
+			if (READ_ONCE(rep->re_freed))
+			{
+				// 会进入到这里,这整个程序时有问题的。
+				printf("read re_freed != 0\n");
 				abort();			//\lnlbl{lookup:abort}
+			}
 			// 如若 rep refcnt 小于 0
+			// 这里表示 链表结构更新了？
+			// 如若更新,则需要重试一下
 			old = atomic_read(&rep->re_refcnt);
 			if (old <= 0)
 				goto retry;
@@ -110,7 +123,7 @@ int route_add(unsigned long addr, unsigned long interface)
 	atomic_set(&rep->re_refcnt, 1);
 	rep->addr = addr;
 	rep->iface = interface;
-	// 加锁将 rep 插入到 route_list
+	// 加锁将 rep 插入到 route_list(头插法)
 	spin_lock(&routelock);				//\lnlbl{acq1}
 	rep->re_next = route_list.re_next;
 	rep->re_freed = 0;				//\lnlbl{init:freed}
