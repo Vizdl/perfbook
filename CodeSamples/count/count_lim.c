@@ -26,28 +26,35 @@ static __inline__ void balance_count(void);
 
 //\begin{snippet}[labelbase=ln:count:count_lim:variable,commandchars=\\\@\$]
 unsigned long __thread counter = 0;
+// 局部计数器的动态最大值
 unsigned long __thread countermax = 0;
 unsigned long globalcountmax = 10000;		//\lnlbl{globalcountmax}
+// 全局计数器
 unsigned long globalcount = 0;			//\lnlbl{globalcount}
 unsigned long globalreserve = 0;		//\lnlbl{globalreserve}
+// 局部计数器
 unsigned long *counterp[NR_THREADS] = { NULL };
+// 保护全局计数器的锁
 DEFINE_SPINLOCK(gblcnt_mutex);
 //\end{snippet}
 
 //\begin{snippet}[labelbase=ln:count:count_lim:add_sub_read,commandchars=\\\@\$]
 static __inline__ int add_count(unsigned long delta)	//\lnlbl{add:b}
 {
+	// 如若 count + delta <= countermax,则直接加
 	if (countermax - counter >= delta) {		//\lnlbl{add:checklocal}
 		WRITE_ONCE(counter, counter + delta);	//\lnlbl{add:add}
 		return 1;				//\lnlbl{add:return:ls}
 	}
 	spin_lock(&gblcnt_mutex);			//\lnlbl{add:acquire}
 	globalize_count();				//\lnlbl{add:globalize}
+	// globalcount + globalreserve + delta > globalcountmax
 	if (globalcountmax -				//\lnlbl{add:checkglb:b}
 	    globalcount - globalreserve < delta) {	//\lnlbl{add:checkglb:e}
 		spin_unlock(&gblcnt_mutex);		//\lnlbl{add:release:f}
 		return 0;				//\lnlbl{add:return:gf}
 	}
+	// 
 	globalcount += delta;				//\lnlbl{add:addglb}
 	balance_count();				//\lnlbl{add:balance}
 	spin_unlock(&gblcnt_mutex);			//\lnlbl{add:release:s}
@@ -78,6 +85,9 @@ static __inline__ unsigned long read_count(void)	//\lnlbl{read:b}
 	unsigned long sum;
 
 	spin_lock(&gblcnt_mutex);			//\lnlbl{read:acquire}
+	// 数据分两部分存储
+	// 一部分存在 globalcount 里
+	// 另一部分存在 counterp 数组
 	sum = globalcount;				//\lnlbl{read:initsum}
 	for_each_thread(t) {				//\lnlbl{read:loop:b}
 		if (counterp[t] != NULL)
@@ -88,6 +98,7 @@ static __inline__ unsigned long read_count(void)	//\lnlbl{read:b}
 }							//\lnlbl{read:e}
 //\end{snippet}
 
+// 把局部计数器同步到全局计数器
 //\begin{snippet}[labelbase=ln:count:count_lim:utility,commandchars=\\\@\$]
 static __inline__ void globalize_count(void)	//\lnlbl{globalize:b}
 {

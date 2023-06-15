@@ -21,6 +21,10 @@
 
 #include "../api.h"
 
+/**
+ * 定义 per_cpu 变量
+ */
+
 //\begin{snippet}[labelbase=ln:count:count_stat:inc-read,commandchars=\\\[\]]
 DEFINE_PER_THREAD(unsigned long, counter);		//\lnlbl{define}
 
