@@ -62,7 +62,8 @@ unsigned long route_lookup(unsigned long addr)
 
 retry:
 	// 为什么访问 route_list 不用加锁???
-	// 原子整数无法提供 smp 安全地遍历链表
+	// 这里读取了 route_list 中 re_next 的地址
+	// 要注意,这里的地址一定是固定的,所以不会出现任何竞态。
 	repp = &route_list.re_next;
 	rep = NULL;
 	// 遍历 route_list 直到找到 addr 对应的 rep

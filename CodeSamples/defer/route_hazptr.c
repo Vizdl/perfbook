@@ -34,6 +34,7 @@ struct route_entry {
 };
 								//\fcvexclude
 struct route_entry route_list;
+// 保护多写冲突
 DEFINE_SPINLOCK(routelock);
 								//\fcvexclude
 /* This thread's fixed-sized set of hazard pointers. */
@@ -49,15 +50,27 @@ unsigned long route_lookup(unsigned long addr)
 	struct route_entry **repp;
 
 retry:							//\lnlbl{retry}
+	// 这里读取了 route_list 中 re_next 的地址
+	// 要注意,这里的地址一定是固定的,所以不会出现任何竞态。
 	repp = &route_list.re_next;
 	do {
+		// 临界区
+// ==========================================================
+		// 这里在试图读取 next 指针
+		// rep = my_hazptr[offset].p = *repp
 		rep = hp_try_record(repp, &my_hazptr[offset]);	//\lnlbl{tryrecord}
 		if (!rep)
 			return ULONG_MAX;			//\lnlbl{NULL}
+		// 访问到了一个已经被删除的节点
 		if ((uintptr_t)rep == HAZPTR_POISON)
 			goto retry; /* element deleted. */	//\lnlbl{deleted}
+// ==========================================================
+
+		// 这里读取了 rep 中 re_next 的地址
+		// 要注意,这里的地址一定是固定的,所以不会出现任何竞态。
 		repp = &rep->re_next;
 	} while (rep->addr != addr);
+	// 如若最终找到一个已经释放的节点,则断言报错。
 	if (READ_ONCE(rep->re_freed))
 		abort();					//\lnlbl{abort}
 	return rep->iface;
@@ -78,10 +91,14 @@ int route_add(unsigned long addr, unsigned long interface)
 	rep->addr = addr;
 	rep->iface = interface;
 	rep->re_freed = 0;				//\lnlbl{init_freed}
+	// 临界区
+// ==========================================================
 	spin_lock(&routelock);
+	// 这里在建立联系
 	rep->re_next = route_list.re_next;
 	route_list.re_next = rep;
 	spin_unlock(&routelock);
+// ==========================================================
 	return 0;
 }
 
@@ -93,6 +110,8 @@ int route_del(unsigned long addr)
 	struct route_entry *rep;
 	struct route_entry **repp;
 
+	// 临界区
+// ==========================================================
 	spin_lock(&routelock);
 	repp = &route_list.re_next;
 	for (;;) {
@@ -100,15 +119,21 @@ int route_del(unsigned long addr)
 		if (rep == NULL)
 			break;
 		if (rep->addr == addr) {
+			// 这里在解除联系
+			// repp = &prev->re_next
+			// 这里将前一个元素的 next 指针指向 next 节点
 			*repp = rep->re_next;
+			// 这里将当前节点 next 指向 HAZPTR_POISON,标记已解除关系。
 			rep->re_next = (struct route_entry *)HAZPTR_POISON; //\lnlbl{poison}
 			spin_unlock(&routelock);
+			// 这里试图释放 rep
 			hazptr_free_later(&rep->hh);	//\lnlbl{free_later}
 			return 0;
 		}
 		repp = &rep->re_next;
 	}
 	spin_unlock(&routelock);
+// ==========================================================
 	return -ENOENT;
 }
 //\end{snippet}

@@ -68,12 +68,13 @@ static inline void *_h_t_r_impl(void **p,		//\lnlbl{htr:b}
                                 hazard_pointer *hp)
 {
 	void *tmp;
-
 	tmp = READ_ONCE(*p);				//\lnlbl{htr:ro1}
 	if (!tmp || tmp == (void *)HAZPTR_POISON)
 		return tmp;				//\lnlbl{htr:race1}
+	// hp->p = *p
 	WRITE_ONCE(hp->p, tmp);				//\lnlbl{htr:store}
 	smp_mb();					//\lnlbl{htr:mb}
+	// 为什么这里又要读一遍? 防止 *p 在这个过程中被修改
 	if (tmp == READ_ONCE(*p))			//\lnlbl{htr:ro2}
 		return tmp;				//\lnlbl{htr:success}
 	return (void *)HAZPTR_POISON;			//\lnlbl{htr:race2}
