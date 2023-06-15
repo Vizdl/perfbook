@@ -31,7 +31,8 @@ struct route_entry {
 	unsigned long iface;
 	// 是否已释放
 	// 一般情况下能查看到的条目都为 0
-	// 除非 re_free 执行 free 失败了
+	// 除非 re_free 执行完 WRITE_ONCE(rep->re_freed, 1) 
+	// 但还没执行完 free(rep);
 	// 这个的主要目的就是用来检测是否成功释放的
 	// if (READ_ONCE(rep->re_freed))
 	// 	abort();	
@@ -61,8 +62,7 @@ unsigned long route_lookup(unsigned long addr)
 
 retry:
 	// 为什么访问 route_list 不用加锁???
-	// 这里是用原子整数实现遍历,但我不知道为什么可以
-	// 可以做一个实验来证明
+	// 原子整数无法提供 smp 安全地遍历链表
 	repp = &route_list.re_next;
 	rep = NULL;
 	// 遍历 route_list 直到找到 addr 对应的 rep
@@ -84,13 +84,10 @@ retry:
 		do {						//\lnlbl{lookup:acq:b}
 			if (READ_ONCE(rep->re_freed))
 			{
-				// 会进入到这里,这整个程序时有问题的。
 				printf("read re_freed != 0\n");
 				abort();			//\lnlbl{lookup:abort}
 			}
-			// 如若 rep refcnt 小于 0
-			// 这里表示 链表结构更新了？
-			// 如若更新,则需要重试一下
+			// 如若 rep 已经 free, 则可能会发生堆栈错误
 			old = atomic_read(&rep->re_refcnt);
 			if (old <= 0)
 				goto retry;
@@ -101,7 +98,6 @@ retry:
 		/* Advance to next. */
 		repp = &rep->re_next;
 	} while (rep->addr != addr);
-	// 如若等于
 	ret = rep->iface;
 	if (atomic_dec_and_test(&rep->re_refcnt))
 		re_free(rep);
@@ -116,14 +112,12 @@ retry:
 int route_add(unsigned long addr, unsigned long interface)
 {
 	struct route_entry *rep;
-	// 申请内存并初始化 rep
 	rep = malloc(sizeof(*rep));
 	if (!rep)
 		return -ENOMEM;
 	atomic_set(&rep->re_refcnt, 1);
 	rep->addr = addr;
 	rep->iface = interface;
-	// 加锁将 rep 插入到 route_list(头插法)
 	spin_lock(&routelock);				//\lnlbl{acq1}
 	rep->re_next = route_list.re_next;
 	rep->re_freed = 0;				//\lnlbl{init:freed}
@@ -139,7 +133,6 @@ int route_del(unsigned long addr)
 {
 	struct route_entry *rep;
 	struct route_entry **repp;
-	// 从 route_list 找到匹配 addr 的地址并且解除关系
 	spin_lock(&routelock);				//\lnlbl{acq2}
 	repp = &route_list.re_next;
 	for (;;) {
@@ -149,7 +142,7 @@ int route_del(unsigned long addr)
 		if (rep->addr == addr) {
 			*repp = rep->re_next;
 			spin_unlock(&routelock);	//\lnlbl{rel2}
-			// 判断是否可释放
+			// 判断是否可释放,这里存在一个竞态。
 			if (atomic_dec_and_test(&rep->re_refcnt)) //\lnlbl{re_free:b}
 				re_free(rep);		//\lnlbl{re_free:e}
 			return 0;
