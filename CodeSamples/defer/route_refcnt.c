@@ -23,9 +23,8 @@
 #include "../api.h"
 
 /* Route-table entry to be included in the routing list. */
-//\begin{snippet}[labelbase=ln:defer:route_refcnt:lookup,commandchars=\\\[\]]
 struct route_entry {
-	atomic_t re_refcnt;				//\lnlbl{entry:refcnt}
+	atomic_t re_refcnt;
 	struct route_entry *re_next;
 	unsigned long addr;
 	unsigned long iface;
@@ -36,18 +35,18 @@ struct route_entry {
 	// 这个的主要目的就是用来检测是否成功释放的
 	// if (READ_ONCE(rep->re_freed))
 	// 	abort();	
-	int re_freed;					//\lnlbl{entry:freed}
+	int re_freed;
 };
-							//\fcvexclude
+
 struct route_entry route_list;
 // 保护 route_list
-DEFINE_SPINLOCK(routelock);				//\lnlbl{entry:routelock}
+DEFINE_SPINLOCK(routelock);
 
-static void re_free(struct route_entry *rep)		//\lnlbl{re_free:b}
+static void re_free(struct route_entry *rep)
 {
 	WRITE_ONCE(rep->re_freed, 1);
 	free(rep);
-}							//\lnlbl{re_free:e}
+}
 
 /*
  * Look up a route entry, return the corresponding interface.
@@ -61,41 +60,36 @@ unsigned long route_lookup(unsigned long addr)
 	unsigned long ret;
 
 retry:
-	// 为什么访问 route_list 不用加锁???
-	// 这里读取了 route_list 中 re_next 的地址
-	// 要注意,这里的地址一定是固定的,所以不会出现任何竞态。
 	repp = &route_list.re_next;
 	rep = NULL;
-	// 遍历 route_list 直到找到 addr 对应的 rep
 	do {
 		// 为什么这里要减少引用?
 		// 因为 rep 表示上一条 route entry(已经增加了引用计数)并且没匹配上 addr(否则会退出循环)
 		// 所以在这里需要减少引用计数
-		if (rep && atomic_dec_and_test(&rep->re_refcnt)) //\lnlbl{lookup:relprev:b}
-			re_free(rep);				//\lnlbl{lookup:relprev:e}
-		// 在这里将 rep 更新为当前 route entry
+		if (rep && atomic_dec_and_test(&rep->re_refcnt))
+			re_free(rep);
+// =================[ READ BGN ]======================
 		rep = READ_ONCE(*repp);
-		if (rep == NULL)				//\lnlbl{lookup:check_NULL}
+		if (rep == NULL)
 		{
 			return ULONG_MAX;
 		}
-								//\fcvexclude
 		/* Acquire a reference if the count is non-zero. */
 		// 如果计数为非零，则获取引用。
-		do {						//\lnlbl{lookup:acq:b}
+		do {
 			if (READ_ONCE(rep->re_freed))
 			{
 				printf("read re_freed != 0\n");
-				abort();			//\lnlbl{lookup:abort}
+				abort();
 			}
-			// 如若 rep 已经 free, 则可能会发生堆栈错误
+			// 如若获取到一个引用计数为 0 的,则表示当前链表状态不对,重试。
 			old = atomic_read(&rep->re_refcnt);
 			if (old <= 0)
 				goto retry;
 			new = old + 1;
 		} while (atomic_cmpxchg(&rep->re_refcnt,
-		                        old, new) != old);	//\lnlbl{lookup:acq:e}
-								//\fcvexclude
+		                        old, new) != old);
+// =================[ READ END ]======================
 		/* Advance to next. */
 		repp = &rep->re_next;
 	} while (rep->addr != addr);
@@ -104,12 +98,10 @@ retry:
 		re_free(rep);
 	return ret;
 }
-//\end{snippet}
 
 /*
  * Add an element to the route table.
  */
-//\begin{snippet}[labelbase=ln:defer:route_refcnt:add_del,commandchars=\\\[\]]
 int route_add(unsigned long addr, unsigned long interface)
 {
 	struct route_entry *rep;
@@ -119,11 +111,13 @@ int route_add(unsigned long addr, unsigned long interface)
 	atomic_set(&rep->re_refcnt, 1);
 	rep->addr = addr;
 	rep->iface = interface;
-	spin_lock(&routelock);				//\lnlbl{acq1}
+// =================[ WRTE BGN ]======================
+	spin_lock(&routelock);
 	rep->re_next = route_list.re_next;
-	rep->re_freed = 0;				//\lnlbl{init:freed}
+	rep->re_freed = 0;
 	route_list.re_next = rep;
-	spin_unlock(&routelock);			//\lnlbl{rel1}
+	spin_unlock(&routelock);
+// =================[ WRTE END ]======================
 	return 0;
 }
 
@@ -134,7 +128,8 @@ int route_del(unsigned long addr)
 {
 	struct route_entry *rep;
 	struct route_entry **repp;
-	spin_lock(&routelock);				//\lnlbl{acq2}
+// =================[ WRTE BGN ]======================
+	spin_lock(&routelock);
 	repp = &route_list.re_next;
 	for (;;) {
 		rep = *repp;
@@ -142,18 +137,20 @@ int route_del(unsigned long addr)
 			break;
 		if (rep->addr == addr) {
 			*repp = rep->re_next;
-			spin_unlock(&routelock);	//\lnlbl{rel2}
-			// 判断是否可释放,这里存在一个竞态。
-			if (atomic_dec_and_test(&rep->re_refcnt)) //\lnlbl{re_free:b}
-				re_free(rep);		//\lnlbl{re_free:e}
+			spin_unlock(&routelock);
+// =================[ WRTE END ]======================
+// =================[ FREE BGN ]======================
+			if (atomic_dec_and_test(&rep->re_refcnt))
+				re_free(rep);
+// =================[ FREE END ]======================
 			return 0;
 		}
 		repp = &rep->re_next;
 	}
-	spin_unlock(&routelock);			//\lnlbl{rel3}
+	spin_unlock(&routelock);
+// =================[ WRTE END ]======================
 	return -ENOENT;
 }
-//\end{snippet}
 
 /*
  * Clear all elements from the route table.
