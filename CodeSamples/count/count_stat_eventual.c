@@ -46,6 +46,10 @@ void *eventual(void *arg)				//\lnlbl{eventual:b}
 
 	while (READ_ONCE(stopflag) < 3) {
 		sum = 0;
+		/**
+		 * 这里是只读的,对于 counter 来说,一读一写,不需要原子操作
+		 * 因为数据 cpu 缓存只会在写端。
+		 */
 		for_each_thread(t)
 			sum += READ_ONCE(per_thread(counter, t));
 		WRITE_ONCE(global_count, sum);
