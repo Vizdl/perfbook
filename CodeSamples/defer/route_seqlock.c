@@ -46,24 +46,30 @@ unsigned long route_lookup(unsigned long addr)
 	unsigned long s;
 
 retry:							//\lnlbl{lookup:retry}
-	s = read_seqbegin(&sl);				//\lnlbl{lookup:r_sqbegin}
+	s = read_seqbegin(&sl);
+	// 保存序列,后续用来比对判断是否在期间被更新过
 	repp = &route_list.re_next;
 	do {
+// =================[ READ BGN ]======================
 		rep = READ_ONCE(*repp);
+		// 如若读到最后一个节点
 		if (rep == NULL) {
-			if (read_seqretry(&sl, s))	//\lnlbl{lookup:r_sqretry1}
-				goto retry;		//\lnlbl{lookup:goto_retry1}
+			// 根据序列判断链表是否被更新过。
+			if (read_seqretry(&sl, s))
+				goto retry;
+			// 如若没被更新过,依然读到了最后一个节点,那么则认为没找到
 			return ULONG_MAX;
 		}
-								//\fcvexclude
 		/* Advance to next. */
 		repp = &rep->re_next;
 	} while (rep->addr != addr);
-	if (READ_ONCE(rep->re_freed))			//\lnlbl{lookup:chk_freed}
-		abort();				//\lnlbl{lookup:abort}
+	if (READ_ONCE(rep->re_freed))
+		abort();
 	ret = rep->iface;
-	if (read_seqretry(&sl, s))			//\lnlbl{lookup:r_sqretry2}
-		goto retry;				//\lnlbl{lookup:goto_retry2}
+	// 在最后再判断一下是否被更新过
+	if (read_seqretry(&sl, s))
+		goto retry;
+// =================[ READ END ]======================
 	return ret;
 }
 //\end{snippet}
@@ -81,11 +87,13 @@ int route_add(unsigned long addr, unsigned long interface)
 		return -ENOMEM;
 	rep->addr = addr;
 	rep->iface = interface;
-	rep->re_freed = 0;			//\lnlbl{add:clr_freed}
+	rep->re_freed = 0;
+// =================[ WRTE BGN ]======================
 	write_seqlock(&sl);			//\lnlbl{add:w_sqlock}
 	rep->re_next = route_list.re_next;
 	route_list.re_next = rep;
-	write_sequnlock(&sl);			//\lnlbl{add:w_squnlock}
+	write_sequnlock(&sl);
+// =================[ WRTE END ]======================
 	return 0;
 }
 
@@ -97,6 +105,7 @@ int route_del(unsigned long addr)
 	struct route_entry *rep;
 	struct route_entry **repp;
 
+// =================[ WRTE BGN ]======================
 	write_seqlock(&sl);				//\lnlbl{del:w_sqlock}
 	repp = &route_list.re_next;
 	for (;;) {
@@ -106,14 +115,19 @@ int route_del(unsigned long addr)
 		if (rep->addr == addr) {
 			*repp = rep->re_next;
 			write_sequnlock(&sl);		//\lnlbl{del:w_squnlock1}
+			// 确保 *repp = rep->re_next 同步到所有核才开始释放 rep
+			// 避免 rep 释放后仍然有核访问到
 			smp_mb();
-			rep->re_freed = 1;		//\lnlbl{del:set_freed}
+// =================[ FREE BGN ]======================
+			rep->re_freed = 1;
 			free(rep);
+// =================[ FREE END ]======================
 			return 0;
 		}
 		repp = &rep->re_next;
 	}
-	write_sequnlock(&sl);				//\lnlbl{del:w_squnlock2}
+	write_sequnlock(&sl);
+// =================[ WRTE END ]======================
 	return -ENOENT;
 }
 //\end{snippet}

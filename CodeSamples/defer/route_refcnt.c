@@ -69,7 +69,13 @@ retry:
 		if (rep && atomic_dec_and_test(&rep->re_refcnt))
 			re_free(rep);
 // =================[ READ BGN ]======================
+		// 这里在试图读取 next 指针
+		// 访问 next 指针存在两个层面的问题
+		// 1. next 指针指向的内存已经被释放(与释放的冲突)
+		// 2. next 指针指向的内存已经被解链但还未被释放,重新遍历链表
+		// 这里存在一个 bug, 那就是如若内存已经被释放则引用计数的访问本身就是访问无效内存(但是可能无法发现)。
 		rep = READ_ONCE(*repp);
+		// 访问到最后一个节点(没找到)
 		if (rep == NULL)
 		{
 			return ULONG_MAX;

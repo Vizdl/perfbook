@@ -24,6 +24,7 @@
 #include "hazptr.h"
 
 struct route_entry {
+	// 危险指针节点,用来释放内存的。
 	struct hazptr_head hh;
 	struct route_entry *re_next;
 	unsigned long addr;
@@ -34,7 +35,7 @@ struct route_entry {
 struct route_entry route_list;
 // 保护多写冲突
 DEFINE_SPINLOCK(routelock);
-
+// 这里将会被初始化为指向 HP 数组
 hazard_pointer __thread *my_hazptr;
 
 /*
@@ -51,11 +52,18 @@ retry:
 	do {
 // =================[ READ BGN ]======================
 		// 这里在试图读取 next 指针
+		// 访问 next 指针存在两个层面的问题
+		// 1. next 指针指向的内存已经被释放(与释放的冲突),通过危险指针延期释放解决。
+		// 2. next 指针指向的内存已经被解链但还未被释放,重新遍历链表
 		// rep = my_hazptr[offset].p = *repp
+		// 下面其实做了两件事
+		// 1. 标记 repp 正在被读
+		// 2. 安全地获取到 *repp
 		rep = hp_try_record(repp, &my_hazptr[offset]);
+		// 访问到最后一个节点(没找到)
 		if (!rep)
 			return ULONG_MAX;
-		// 访问到了一个已经被删除的节点
+		// 访问到了一个已经被解链
 		if ((uintptr_t)rep == HAZPTR_POISON)
 			goto retry; /* element deleted. */
 // =================[ READ END ]======================
@@ -113,6 +121,7 @@ int route_del(unsigned long addr)
 			spin_unlock(&routelock);
 // =================[ WRTE END ]======================
 // =================[ FREE BGN ]======================
+			// 延迟释放
 			hazptr_free_later(&rep->hh);
 // =================[ FREE END ]======================
 			return 0;
@@ -159,6 +168,7 @@ void route_register_thread(void)
 
 #define other_init() hazptr_init()
 
+// 危险指针释放函数
 void hazptr_free(void *p)
 {
 	struct route_entry *rep = p;

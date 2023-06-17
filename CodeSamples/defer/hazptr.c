@@ -21,9 +21,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-static hazptr_head_t __thread *rlist;
-static unsigned long __thread rcount;
-static hazptr_head_t __thread **gplist;
+static hazptr_head_t __thread *rlist; 	// 当前线程待释放的指针
+static unsigned long __thread rcount; 	// 待释放指针的数量
+static hazptr_head_t __thread **gplist;	// 存储危险指针(正在访问)的数组
 
 void hazptr_init(void)
 {
@@ -101,6 +101,7 @@ void hazptr_scan()				//\lnlbl{scan:b}
 	/*
 	 * Make sure that the most recent node to be deleted has been unlinked
 	 * in all processors' views.
+	 * 确保最近删除的节点在所有处理器的视图中已被解链
 	 *
 	 * Good:
 	 *   A -> B -> C ---> A -> C ---> A -> C
@@ -113,6 +114,7 @@ void hazptr_scan()				//\lnlbl{scan:b}
 	smp_mb();				//\lnlbl{scan:mb1}
 
 	/* Stage 1: Scan HP list and insert non-null values in plist. */
+	// 扫描危险指针列表(正在访问的指针)并将非空值插入到 plist 中。
 	psize = 0;
 	for (i = 0; i < H; i++) {		//\lnlbl{scan:loop:b}
 		uintptr_t hp = (uintptr_t)READ_ONCE(HP[i].p);
@@ -124,9 +126,11 @@ void hazptr_scan()				//\lnlbl{scan:b}
 	smp_mb(); /* ensure freeing happens after scan. */ //\lnlbl{scan:mb2}
 	
 	/* Stage 2: Sort the plist. */
+	// 排序危险指针列表
 	qsort(plist, psize, sizeof(hazptr_head_t *), compare); //\lnlbl{scan:sort}
 
 	/* Stage 3: Free non-harzardous nodes. */
+	// 释放非危险节点(引用计数为 0)。
 	tmplist = rlist;			//\lnlbl{scan:rem:b}
 	rlist = NULL;				//\lnlbl{scan:rem:e}
 	rcount = 0;				//\lnlbl{scan:zero}
@@ -134,7 +138,9 @@ void hazptr_scan()				//\lnlbl{scan:b}
 		/* Pop cur off top of tmplist. */
 		cur = tmplist;			//\lnlbl{scan:rem1st:b}
 		tmplist = tmplist->next;	//\lnlbl{scan:rem1st:e}
-
+		// 判断当前指针是否属于危险指针
+		// 如若属于则加回 rlist, 等待下次释放。
+		// 否则利用外部提供的释放函数释放 (hazptr_free)
 		if (bsearch(&cur, plist, psize,	//\lnlbl{scan:chkhazp:b}
 		            sizeof(hazptr_head_t *), compare)) { //\lnlbl{scan:chkhazp:e}
 			cur->next = rlist;	//\lnlbl{scan:back:b}
@@ -148,10 +154,11 @@ void hazptr_scan()				//\lnlbl{scan:b}
 							//\fcvblank
 void hazptr_free_later(hazptr_head_t *n)	//\lnlbl{free:b}
 {
+	// 头插法,将危险指针节点加入到 rlist
 	n->next = rlist;			//\lnlbl{free:enq:b}
 	rlist = n;				//\lnlbl{free:enq:e}
 	rcount++;				//\lnlbl{free:count}
-
+	// 如若待释放指针大于 R
 	if (rcount >= R) {			//\lnlbl{free:check}
 		hazptr_scan();			//\lnlbl{free:scan}
 	}

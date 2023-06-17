@@ -52,6 +52,8 @@ typedef struct hazard_pointer_s {
 } hazard_pointer;
 
 /* Must be dynamically initialized to be an array of size H. */
+// 危险指针数组必须进行动态初始化，以便具有大小为H的数组。
+// HP 数组表示正在被访问的危险指针
 hazard_pointer *HP;
  
 void hazptr_init(void);
