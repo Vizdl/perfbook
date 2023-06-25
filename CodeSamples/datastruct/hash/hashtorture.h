@@ -653,8 +653,10 @@ unsigned long primes[] ={
 
 /* Parameters for performance test. */
 int nbuckets = 1024;
+// 读端线程数
 int nreaders = 1;
 int ncats = 0;
+// 写端线程数
 int nupdaters = 1;
 int updatewait = -1;
 long elperupdater = 2048;
@@ -664,13 +666,13 @@ int resizemult = 0;
 int resizewait = 1;
 long long nresizes = 0;
 long duration = 10; /* in milliseconds. */
-
+// 正在运行的测试线程数
 atomic_t nthreads_running;
 
 #define GOFLAG_INIT 0
 #define GOFLAG_RUN  1
 #define GOFLAG_STOP 2
-
+// 用来控制读写端运行状态的标志位
 int goflag __attribute__((__aligned__(CACHE_LINE_SIZE))) = GOFLAG_INIT;
 
 /* Per-test-thread attribute/statistics structure. */
@@ -773,7 +775,7 @@ void *perftest_reader(void *arg)
 	int offset = (ne / mydelta) * mydelta == ne;
 	long long nlookups = 0;
 	long long nlookupfails = 0;
-
+	// 设置要运行的核
 	run_on(pap->mycpu);
 	crdp = create_call_rcu_data(0, pap->mycpu);
 	set_thread_call_rcu_data(crdp);
@@ -790,6 +792,7 @@ void *perftest_reader(void *arg)
 	i = 0;
 	for (;;) {
 		gf = READ_ONCE(goflag);
+		// 这里读取 goflag 获取状态,根据状态判断是否继续运行
 		if (gf != GOFLAG_RUN) {
 			if (gf == GOFLAG_STOP)
 				break;
@@ -797,6 +800,7 @@ void *perftest_reader(void *arg)
 				/* Still initializing, kill statistics. */
 				nlookups = 0;
 				nlookupfails = 0;
+				continue;
 			}
 		}
 		if (!perftest_lookup(i))
@@ -869,6 +873,7 @@ void *perftest_updater(void *arg)
 				/* Still initializing, kill statistics. */
 				nadds = 0;
 				ndels = 0;
+				continue;
 			}
 		}
 		if (updatewait == 0) {
@@ -928,11 +933,13 @@ void perftest(void)
 	struct testhe *thep;
 
 	BUG_ON(maxcpus <= 0);
+	// 创建哈希表
 	perftest_htp = hashtab_alloc(nbuckets, testcmp, tgh, testgk);
 	BUG_ON(perftest_htp == NULL);
 	defer_del_done = defer_del_done_perftest;
 	thep = malloc(sizeof(*thep) * nupdaters * elperupdater);
 	BUG_ON(thep == NULL);
+	// 给每个测试线程用来统计的数组(每个线程一个)
 	pap = malloc(sizeof(*pap) * (nreaders + nupdaters));
 	BUG_ON(pap == NULL);
 	atomic_set(&nthreads_running, 0);
@@ -940,6 +947,7 @@ void perftest(void)
 
 	hash_register_thread();
 	for (i = 0; i < nreaders + nupdaters; i++) {
+		// 初始化统计数据
 		pap[i].myid = i < nreaders ? i : i - nreaders;
 		pap[i].nlookups = 0;
 		pap[i].nlookupfails = 0;
@@ -956,31 +964,37 @@ void perftest(void)
 			perftest_updater_init(mylowkey, mythep);
 			pap[i].myelp = mythep;
 		}
+		// 创建读端线程或写端线程
 		create_thread(i < nreaders ? perftest_reader : perftest_updater,
 			      &pap[i]);
 	}
 	hash_unregister_thread();
 
 	/* Wait for all threads to initialize. */
+	// 同步等待所有线程运行
 	while (atomic_read(&nthreads_running) < nreaders + nupdaters)
 		poll(NULL, 0, 1);
 	smp_mb();
 
 	/* Run the test. */
-	starttime = get_microseconds();
-	WRITE_ONCE(goflag, GOFLAG_RUN);
+	starttime = get_microseconds();	// 获取开始时间
+	WRITE_ONCE(goflag, GOFLAG_RUN);	// 开始
 	poll(NULL, 0, duration);
-	WRITE_ONCE(goflag, GOFLAG_STOP);
-	starttime = get_microseconds() - starttime;
+	WRITE_ONCE(goflag, GOFLAG_STOP); // 停止
+	starttime = get_microseconds() - starttime; // 计算运行时间
 	wait_all_threads();
 
 	/* Collect stats and output them. */
+	// 收集统计所有线程信息
 	for (i = 0; i < nreaders + nupdaters; i++) {
 		nlookups += pap[i].nlookups;
 		nlookupfails += pap[i].nlookupfails;
 		nadds += pap[i].nadds;
 		ndels += pap[i].ndels;
 	}
+	/**
+	 * 输出结果
+	 */
 	printf("nlookups: %lld %lld  nadds: %lld  ndels: %lld  duration: %g\n",
 	       nlookups, nlookupfails, nadds, ndels, starttime / 1000.);
 	printf("ns/read: %g  ns/update: %g\n",

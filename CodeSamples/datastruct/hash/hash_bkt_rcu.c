@@ -42,14 +42,14 @@ struct ht_elem {
 /* Hash-table bucket element. */
 struct ht_bucket {
 	struct cds_list_head htb_head;
-	spinlock_t htb_lock;
+	spinlock_t htb_lock;	// 保护 htb_head 的写竞态
 };
 
 /* Top-level hash-table data structure, including buckets. */
 struct hashtab {
-	unsigned long ht_nbuckets;
-	int (*ht_cmp)(struct ht_elem *htep, void *key);
-	struct ht_bucket ht_bkt[0];
+	unsigned long ht_nbuckets;						// 桶数量
+	int (*ht_cmp)(struct ht_elem *htep, void *key);	// 比较两个元素是否相等
+	struct ht_bucket ht_bkt[0];						// 桶数组(可拓展)
 };
 
 /* Map from hash value to corresponding bucket. */
