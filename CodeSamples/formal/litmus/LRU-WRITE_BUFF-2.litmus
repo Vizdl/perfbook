@@ -1,0 +1,25 @@
+C LRU-WRITE_BUFF-2
+
+{
+	int x0 = 0;
+	int x1 = 0;
+}
+
+{
+#include "api.h"
+}
+
+P0(int *x0, int *x1)
+{
+	WRITE_ONCE(*x0, 1);
+	WRITE_ONCE(*x1, 1);
+}
+
+P1(int *x0, int *x1)
+{
+	int a;
+	while(READ_ONCE(*x1) == 0) continue;
+	a = READ_ONCE(*x0);
+}
+
+exists (1:a=0)

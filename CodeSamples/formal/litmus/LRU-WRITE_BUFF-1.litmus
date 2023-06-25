@@ -1,0 +1,21 @@
+C LRU-WRITE_BUFF-1
+
+{
+}
+
+{
+#include "api.h"
+}
+
+P0(int *x0)
+{
+	int b;
+	WRITE_ONCE(*x0, 1);
+	b = READ_ONCE(*x0) + 1;
+}
+
+P1(int* x0) {
+	WRITE_ONCE(*x0, 0);
+}
+
+exists (x0=1 /\ 0:b=1)
