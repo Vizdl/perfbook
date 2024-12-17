@@ -7,32 +7,25 @@
 \Epigraph{If a little knowledge is a dangerous thing, just think what
 	  you could do with a lot of knowledge!}{Unknown}
 
-This chapter covers synchronization techniques used for lockless
-algorithms and parallel real-time systems.
+\begin{CJK}{UTF8}{gbsn}
 
-Although lockless algorithms can be quite helpful when faced with
-extreme requirements, they are no panacea.
-For example, as noted at the end of \cref{chp:Counting},
-you should thoroughly apply partitioning, batching, and
-well-tested packaged weak APIs
-(see \cref{chp:Data Ownership,chp:Deferred Processing})
-before even thinking about lockless algorithms.
+本章介绍了用于无锁算法和并行实时系统的同步技术。
 
-But after doing all that, you still might find yourself needing the
-advanced techniques described in this chapter.
-To that end,
-\cref{sec:advsync:Avoiding Locks}
-summarizes techniques used thus far for avoiding locks and
-\cref{sec:advsync:Non-Blocking Synchronization}
-gives a brief overview of non-blocking synchronization.
-Memory ordering is also quite important, but it warrants its own
-\lcnamecref{chp:Advanced Synchronization: Memory Ordering}, namely
-\cref{chp:Advanced Synchronization: Memory Ordering}.
+尽管无锁算法在面对一些特殊情况时特别有用，但它们并非灵丹妙药。
 
-The second form of advanced synchronization provides the stronger
-forward-progress guarantees needed for parallel real-time computing,
-which is the topic of
-\cref{sec:advsync:Parallel Real-Time Computing}.
+例如，如\cref{chp:Counting}章节末尾所述，在考虑无锁算法之前，
+您应考虑使用分区、批处理以及经过充分测试的封装弱API
+(see \cref{chp:Data Ownership,chp:Deferred Processing})。
+
+但在完成了所有这些之后，您仍然可能发现自己需要本章中描述的高级技术。
+为此，\cref{sec:advsync:Avoiding Locks} 总结了迄今为止用于避免锁的技术，
+并且 \cref{sec:advsync:Non-Blocking Synchronization} 简要概述了无阻塞同步。
+内存顺序也非常重要，但它值得单独深入探讨，
+即 \lcnamecref{chp:Advanced Synchronization: Memory Ordering}，也就是
+\cref{chp:Advanced Synchronization: Memory Ordering}。
+
+第二种形式的高级同步提供了并行实时计算所需的更强的前进进展保证，
+这是\cref{sec:advsync:Parallel Real-Time Computing}的主题。
 
 \section{Avoiding Locks}
 \label{sec:advsync:Avoiding Locks}
@@ -40,15 +33,13 @@ which is the topic of
 \epigraph{We are confronted with insurmountable opportunities.}
 	 {Walt Kelly}
 
-Although locking is the workhorse of parallelism in production, in
-many situations performance, scalability, and real-time response can
-all be greatly improved through use of lockless techniques.
-A particularly impressive example of such a lockless technique is
-the statistical counters described in
-\cref{sec:count:Statistical Counters},
-which avoids not only locks, but also read-modify-write atomic operations,
-memory barriers, and even cache misses for counter increments.
-Other examples we have covered include:
+尽管锁是生产环境中并行计算的主力工具，但在许多情况下，
+性能、可扩展性和实时响应都可以通过使用无锁技术得到极大提升。
+一个特别令人印象深刻的无锁技术例子是
+\cref{sec:count:Statistical Counters}中描述的统计计数器，
+它不仅避免了锁，还避免了读-修改-写的原子操作、
+内存屏障，甚至在计数器递增时避免了缓存未命中的问题。
+我们已经讨论的其他例子包括：
 
 \begin{enumerate}
 \item	The fastpaths through a number of other counting algorithms
@@ -63,15 +54,12 @@ Other examples we have covered include:
 \item	Many of the techniques in \cref{chp:Putting It All Together}.
 \end{enumerate}
 
-In short, lockless techniques are quite useful and are heavily used.
-However, it is best if lockless techniques are hidden behind a
-well-defined API, such as the \co{inc_count()}, \co{memblock_alloc()},
-\co{rcu_read_lock()}, and so on.
-The reason for this is that undisciplined use of lockless techniques
-is a good way to create difficult bugs.
-If you believe that finding and fixing such bugs is easier than avoiding
-them, please re-read
-\cref{chp:Validation,chp:Formal Verification}.
+简而言之，无锁技术非常有用，且被广泛使用。
+然而，最好将无锁技术隐藏在一个定义明确的API后面，
+例如\co{inc_count()}, \co{memblock_alloc()}, \co{rcu_read_lock()}等。
+这样做的原因是，无序使用无锁技术很容易产生难以调试的错误。
+如果您认为找到并修复这些错误比避免它们更容易，请重新阅读
+\cref{chp:Validation,chp:Formal Verification}。
 
 \section{Non-Blocking Synchronization}
 \label{sec:advsync:Non-Blocking Synchronization}
@@ -80,10 +68,10 @@ them, please re-read
 	  it's supposed to do.}
 	 {Robert A. Heinlein}
 
-The term \IXBacrfst{nbs}~\cite{MauriceHerlihy90a}
-describes eight classes of \IX{linearizable} algorithms with differing
+下述选项 \IXBacrfst{nbs}~\cite{MauriceHerlihy90a}
+描述了八类 \IX{linearizable} 具有不同前进进展保证的线性化算法
 \emph{\IXBpl{forward-progress guarantee}}~\cite{DanAlitarh2013PracticalProgress},
-which are as follows:
+具体如下：
 
 \begin{enumerate}
 \item	\emph{\IXalth{Bounded population-oblivious wait-free}{bounded population-oblivious}{wait free} synchronization}:
@@ -117,12 +105,12 @@ which are as follows:
 	failures~\cite{DanAlitarh2013PracticalProgress}.
 \end{enumerate}
 
-NBS class~1 was formulated some time before 2015,
-classes~2, 3, and~4 were first formulated in the early 1990s,
-class~5 was first formulated in the early 2000s,
-and class~6 was first formulated in 2013.
-The final two classes have seen informal use for a great many decades,
-but were reformulated in 2013.
+NBS类1的定义在2015年之前就已经提出，
+类2、3和4在1990年代初期首次提出，
+类5在2000年代初首次提出，
+类6则在2013年首次提出。
+最后两个类在过去几十年中已经得到非正式应用，
+但在2013年进行了重新定义。
 
 \QuickQuiz{
 	Given that there will always be a sharply limited number of
@@ -136,55 +124,42 @@ but were reformulated in 2013.
 	size of the largest system it is ever going to run on.
 }\QuickQuizEnd
 
-In theory, any parallel algorithm can be cast into wait-free form,
-but there are a relatively small subset of NBS algorithms that are
-in common use.
-A few of these are listed in the following section.
+理论上，任何并行算法都可以转化为无等待形式，
+但在实际中，只有相对少数的NBS算法被广泛使用。
+其中一些将在以下部分列出。
 
 \subsection{Simple NBS}
 \label{sec:advsync:Simple NBS}
 
-Perhaps the simplest NBS algorithm is atomic update of an integer
-counter using fetch-and-add (\co{atomic_add_return()}) primitives.
-This section lists a few additional commonly used NBS algorithms in
-roughly increasing order of complexity.
+或许最简单的NBS算法是使用取出并加（\co{atomic_add_return()}）原语进行整数计数器的原子更新。
+本节列出了一些额外常用的NBS算法，按复杂度递增的顺序排列。
 
 \subsubsection{NBS Sets}
 \label{sec:advsync:NBS Sets}
 
-One simple NBS algorithm implements a set of integers in an array.
-Here the array index indicates a value that might be a member of the set
-and the array element indicates whether or not that value actually is
-a set member.
-The linearizability criterion for NBS algorithms requires that reads from
-and updates to the array either use atomic instructions or be accompanied
-by memory barriers, but in the not-uncommon case where linearizability
-is not important, simple volatile loads and stores suffice, for example,
-using \co{READ_ONCE()} and \co{WRITE_ONCE()}.
+一个简单的NBS算法实现了一个整数集合，该集合存储在一个数组中。
+在这里，数组索引表示可能是集合成员的值，数组元素则表示该值是否实际是集合的成员。
+NBS算法的线性化标准要求对数组的读取和更新要么使用原子指令，要么伴随有内存屏障，
+但在常见的线性化性不重要的情况下，简单的volatile加载和存储就足够了，
+例如，使用 \co{READ_ONCE()} 和 \co{WRITE_ONCE()}。
 
-An NBS set may also be implemented using a bitmap, where each value that
-might be a member of the set corresponds to one bit.
-Reads and updates must normally be carried out via atomic bit-manipulation
-instructions, although compare-and-swap (\co{cmpxchg()} or CAS)
-instructions can also be used.
+NBS集合还可以使用位图实现，其中每个可能是集合成员的值对应一个位。
+读取和更新通常必须通过原子位操作指令执行，尽管也可以使用比较并交换（\co{cmpxchg()} or CAS）指令。
 
 \subsubsection{NBS Counters}
 \label{sec:advsync:NBS Counters}
 
-The statistical counters algorithm discussed in
-\cref{sec:count:Statistical Counters}
-can be considered to be bounded-wait-free, but only by using a cute
-definitional trick in which the sum is considered to be approximate
-rather than exact.\footnote{
-	Citation needed.
-	I heard of this trick verbally from Mark Moir.}
-Given sufficiently wide error bounds that are a function of the length
-of time that the \co{read_count()} function takes to sum the counters,
-it is not possible to prove that any non-linearizable behavior occurred.
-This definitely (if a bit artificially) classifies the statistical-counters
-algorithm as bounded wait-free.
-This algorithm is probably the most heavily used NBS algorithm in the
-Linux kernel.
+在\cref{sec:count:Statistical Counters}中讨论的统计计数器算法
+可以被认为是有界无等待的，但这只是通过一个巧妙的定义技巧实现的，
+其中总和被认为是近似的而不是精确的。\footnote{
+	需要引用。
+	我从Mark Moir口头了解到这个技巧。}
+给定足够宽的误差范围，这个范围是\co{read_count()}函数花费的时间长度的函数，
+就无法证明发生了任何非线性化的行为。
+这（尽管有点人工）无疑将统计计数器算法归类为有界无等待。
+这个算法可能是Linux内核中使用最广泛的NBS算法。
+
+\end{CJK}
 
 \subsubsection{Half-NBS Queue}
 \label{sec:advsync:Half-NBS Queue}
